@@ -218,7 +218,7 @@ async function handleMem0Click(popup, clickSendButton = false) {
     });
 
     const apiKey = data.apiKey;
-    const userId = data.userId || "chrome-extension-user";
+    const userId = data.userId || "Penn-Lam";
     const accessToken = data.access_token;
 
     if (!apiKey && !accessToken) {

@@ -96,7 +96,7 @@ async function handleMem0Processing(capturedText, clickSendButton = false) {
     });
 
     const apiKey = data.apiKey;
-    const userId = data.userId || "chrome-extension-user";
+    const userId = data.userId || "Penn-Lam";
     const accessToken = data.access_token;
     const memoryEnabled = data.memory_enabled !== false; // Default to true if not set
 

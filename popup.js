@@ -15,7 +15,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   if (googleSignInButton) {
     googleSignInButton.addEventListener("click", function () {
-      chrome.storage.sync.set({ userId: "chrome-extension-user" });
+      chrome.storage.sync.set({ userId: "Penn-Lam" });
       chrome.storage.sync.get(["userLoggedIn"], function (data) {
         if (data.userLoggedIn) {
           chrome.tabs.create(

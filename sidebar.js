@@ -1279,7 +1279,7 @@
 
   function openDashboard() {
     chrome.storage.sync.get(["userId"], function (data) {
-      const userId = data.userId || "chrome-extension-user";
+      const userId = data.userId || "Penn-Lam";
       chrome.runtime.sendMessage({
         action: "openDashboard",
         url: `https://app.mem0.ai/dashboard/user/${userId}`,
