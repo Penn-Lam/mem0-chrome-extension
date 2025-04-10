@@ -1,8 +1,11 @@
+console.log("--- DeepSeek Content Script Top Level --- Script is Loading...");
+
 // DeepSeek content script placeholder
 
 // --- Element Selectors ---
 const INPUT_SELECTOR = "#chat-input";
-const SEND_BUTTON_SELECTOR = 'div[role="button"].ds-button--primary._3172d9f';
+// 移除 aria-disabled 检查，因为脚本运行时按钮可能暂时是禁用的
+const SEND_BUTTON_SELECTOR = 'div[role="button"]:has(svg)';
 
 // --- Element Getters ---
 
@@ -59,6 +62,7 @@ async function handleEnterKey(event) {
  * 设置事件监听器。
  */
 function initializeMem0Integration() {
+  console.log("--- DeepSeek Content Script --- Calling initializeMem0Integration...");
   // 使用事件捕获模式确保优先处理 Enter 键
   document.addEventListener("keydown", handleEnterKey, true);
   console.log("DeepSeek Mem0 integration initialized, listening for Enter key.");
@@ -130,93 +134,95 @@ const MEM0_API_BASE_URL = "https://api.mem0.ai/v1";
 /**
  * 调用 Mem0 API 搜索记忆。
  * @param {string} query 用户输入的查询。
- * @param {{apiKey: string | null, accessToken: string | null, userId: string}} auth 认证信息。
  * @returns {Promise<Array<any>>} 相关的记忆数组，如果出错则为空数组。
  */
-async function searchMemories(query, auth) {
-  if (!auth.userId || (!auth.apiKey && !auth.accessToken)) {
-    console.error("Mem0 Search: Auth details missing.");
-    return [];
-  }
+function searchMemories(query) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const items = await chrome.storage.sync.get(["apiKey", "userId", "access_token"]);
+      if (!items.access_token) {
+        console.error("Access token not found for searching memories.");
+        return reject(new Error("Access token not found"));
+      }
 
-  const authHeader = auth.accessToken
-    ? `Bearer ${auth.accessToken}`
-    : `Token ${auth.apiKey}`;
+      const payload = {
+        endpoint: '/v1/memories/search/', // <<< 添加斜杠
+        method: 'POST',
+        apiKey: items.apiKey, // 传递 apiKey 和 userId (如果后台需要)
+        userId: items.userId,
+        accessToken: items.access_token,
+        body: { 
+          query: query,
+          user_id: items.userId // <<< 将 user_id 添加到请求体中
+        }
+      };
 
-  try {
-    const response = await fetch(`${MEM0_API_BASE_URL}/memories/search`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: authHeader,
-      },
-      body: JSON.stringify({
-        query: query,
-        user_id: auth.userId,
-        limit: 5, // Limit the number of memories retrieved
-        threshold: 0.7 // Adjust relevance threshold as needed
-      }),
-    });
-
-    if (!response.ok) {
-      console.error(`Mem0 Search API Error: ${response.status}`);
-      return [];
+      console.log("Sending search request to background script:", payload);
+      chrome.runtime.sendMessage({ type: 'mem0ApiRequest', payload }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('Error sending message to background:', chrome.runtime.lastError);
+          return reject(new Error(chrome.runtime.lastError.message || "Failed to communicate with background script"));
+        }
+        console.log('Received response from background for search:', response);
+        if (response && response.success) {
+          resolve(response.data);
+        } else {
+          // 从后台获取更详细的错误信息
+          const errorMsg = response && response.error ? response.error.message : "Unknown error during memory search";
+          console.error("Error searching memories from background:", response ? response.error : 'No response');
+          reject(new Error(errorMsg));
+        }
+      });
+    } catch (error) {
+      console.error("Error preparing search request:", error);
+      reject(error);
     }
-
-    const data = await response.json();
-    return data.memories || [];
-  } catch (error) {
-    console.error("Error searching memories:", error);
-    return [];
-  }
+  });
 }
 
 /**
- * 调用 Mem0 API 添加新记忆。
- * @param {string} userContent 用户说的话。
- * @param {string | null} assistantContent AI 的回复 (可选)。
- * @param {{apiKey: string | null, accessToken: string | null, userId: string}} auth 认证信息。
+ * 将单个记忆添加到 Mem0。
+ * @param {string} memoryText 记忆内容。
  */
-async function addMemory(userContent, assistantContent, auth) {
-  if (!auth.userId || (!auth.apiKey && !auth.accessToken)) {
-    console.error("Mem0 Add: Auth details missing.");
-    return;
-  }
+function addMemory(memoryText) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const items = await chrome.storage.sync.get(["apiKey", "userId", "access_token"]);
+      if (!items.access_token) {
+        console.error("Access token not found for adding memory.");
+        return reject(new Error("Access token not found"));
+      }
 
-  const authHeader = auth.accessToken
-    ? `Bearer ${auth.accessToken}`
-    : `Token ${auth.apiKey}`;
+      const payload = {
+        endpoint: '/v1/memories/', // <<< 添加斜杠
+        method: 'POST',
+        apiKey: items.apiKey,
+        userId: items.userId,
+        accessToken: items.access_token,
+        body: { text: memoryText }
+      };
 
-  const messages = [{ role: "user", content: userContent }];
-  if (assistantContent) {
-    messages.push({ role: "assistant", content: assistantContent });
-  }
-
-  try {
-    const response = await fetch(`${MEM0_API_BASE_URL}/memories/`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: authHeader,
-      },
-      body: JSON.stringify({
-        messages: messages,
-        user_id: auth.userId,
-        metadata: {
-          provider: "DeepSeek", // Mark the source
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      console.error(`Mem0 Add API Error: ${response.status}`);
-    } else {
-      console.log("Memory added successfully via DeepSeek script.");
+      console.log("Sending add memory request to background script:", payload);
+      chrome.runtime.sendMessage({ type: 'mem0ApiRequest', payload }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('Error sending message to background:', chrome.runtime.lastError);
+          return reject(new Error(chrome.runtime.lastError.message || "Failed to communicate with background script"));
+        }
+        console.log('Received response from background for add memory:', response);
+        if (response && response.success) {
+          console.log("Memory added successfully via background script.");
+          resolve(response.data); // 假设成功时可能返回数据
+        } else {
+          const errorMsg = response && response.error ? response.error.message : "Unknown error adding memory";
+          console.error("Error adding memory from background:", response ? response.error : 'No response');
+          reject(new Error(errorMsg));
+        }
+      });
+    } catch (error) {
+      console.error("Error preparing add memory request:", error);
+      reject(error);
     }
-  } catch (error) {
-    console.error("Error adding memory:", error);
-  }
+  });
 }
 
 /**
@@ -224,12 +230,23 @@ async function addMemory(userContent, assistantContent, auth) {
  * (需要点击发送按钮)
  */
 function triggerSendAction() {
+  console.log(`Attempting to find send button with selector: ${SEND_BUTTON_SELECTOR}`);
   const sendButton = getSendButtonElement();
   if (sendButton) {
-    console.log("Clicking original send button");
-    sendButton.click();
+    console.log("Send button FOUND:", sendButton);
+    // 检查按钮是否明确被禁用
+    if (sendButton.disabled || sendButton.getAttribute('aria-disabled') === 'true') {
+      console.warn("Send button found but appears to be disabled. Cannot click automatically.");
+      // 在这里，我们或许不应该点击，让用户手动点击？
+      // 或者尝试等待一小段时间再检查/点击？
+      // 目前策略：不点击禁用的按钮
+    } else {
+      console.log("Attempting to click enabled send button");
+      sendButton.click();
+      console.log("Click attempt finished for send button.");
+    }
   } else {
-    console.error("Send button not found, cannot trigger send action.");
+    console.error("Send button NOT FOUND with the current selector.");
   }
 }
 
@@ -249,7 +266,7 @@ async function handleMem0Processing() {
   const auth = await getAuthDetails();
 
   // 1. 搜索相关记忆
-  const memories = await searchMemories(originalPrompt, auth);
+  const memories = await searchMemories(originalPrompt);
 
   let finalPrompt = originalPrompt;
 
