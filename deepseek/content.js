@@ -240,24 +240,31 @@ function addMemory(memoryText) {
  * 触发 DeepSeek 的原始发送操作。
  * (需要点击发送按钮)
  */
-function triggerSendAction() {
-  console.log(`Attempting to find send button with selector: ${SEND_BUTTON_SELECTOR}`);
-  const sendButton = getSendButtonElement();
+async function triggerSendAction() {
+  // More specific selector to find the send button, excluding the 'Deep Thinking' one
+  // Tries to find a div with role=button containing an SVG, but NOT containing a span with '深度思考'
+  const sendButtonSelector = 'div[role="button"]:has(svg):not(:has(span:contains("深度思考")))'; 
+  // Fallback selectors might be needed if the structure changes
+  // const sendButtonSelector = 'button[aria-label*="Send"], button[aria-label*="发送"]'; // Alternative
+  console.log("Attempting to find send button with selector:", sendButtonSelector);
+
+  const sendButton = document.querySelector(sendButtonSelector);
+
   if (sendButton) {
     console.log("Send button FOUND:", sendButton);
-    // 检查按钮是否明确被禁用
-    if (sendButton.disabled || sendButton.getAttribute('aria-disabled') === 'true') {
-      console.warn("Send button found but appears to be disabled. Cannot click automatically.");
-      // 在这里，我们或许不应该点击，让用户手动点击？
-      // 或者尝试等待一小段时间再检查/点击？
-      // 目前策略：不点击禁用的按钮
-    } else {
+    // Check if the button is disabled (some sites use aria-disabled or disabled attribute)
+    const isDisabled = sendButton.getAttribute('aria-disabled') === 'true' || sendButton.disabled;
+
+    if (!isDisabled) {
       console.log("Attempting to click enabled send button");
       sendButton.click();
       console.log("Click attempt finished for send button.");
+    } else {
+      console.log("Send button found but it is disabled.");
+      // Optionally, wait and retry, or inform the user
     }
   } else {
-    console.error("Send button NOT FOUND with the current selector.");
+    console.error("Send button not found with selector:", sendButtonSelector);
   }
 }
 
