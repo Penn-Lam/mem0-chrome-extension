@@ -1,3 +1,5 @@
+console.log("--- DeepSeek Content Script STARTING --- "); // <<< 最顶部的日志
+
 console.log("--- DeepSeek Content Script Top Level --- Script is Loading...");
 
 // DeepSeek content script placeholder
@@ -146,28 +148,29 @@ function searchMemories(query) {
       }
 
       const payload = {
-        endpoint: '/v1/memories/search/', // <<< 添加斜杠
+        endpoint: '/v1/memories/search/', 
         method: 'POST',
-        apiKey: items.apiKey, // 传递 apiKey 和 userId (如果后台需要)
+        apiKey: items.apiKey, 
         userId: items.userId,
         accessToken: items.access_token,
         body: { 
           query: query,
-          user_id: items.userId // <<< 将 user_id 添加到请求体中
+          user_id: items.userId 
         }
       };
 
       console.log("Sending search request to background script:", payload);
       chrome.runtime.sendMessage({ type: 'mem0ApiRequest', payload }, (response) => {
+        console.log("Content script received response from background for search:", response); 
         if (chrome.runtime.lastError) {
           console.error('Error sending message to background:', chrome.runtime.lastError);
           return reject(new Error(chrome.runtime.lastError.message || "Failed to communicate with background script"));
         }
         console.log('Received response from background for search:', response);
         if (response && response.success) {
+          console.log("Search successful, resolving with data:", response.data); 
           resolve(response.data);
         } else {
-          // 从后台获取更详细的错误信息
           const errorMsg = response && response.error ? response.error.message : "Unknown error during memory search";
           console.error("Error searching memories from background:", response ? response.error : 'No response');
           reject(new Error(errorMsg));
@@ -194,12 +197,20 @@ function addMemory(memoryText) {
       }
 
       const payload = {
-        endpoint: '/v1/memories/', // <<< 添加斜杠
+        endpoint: '/v1/memories/', 
         method: 'POST',
         apiKey: items.apiKey,
         userId: items.userId,
         accessToken: items.access_token,
-        body: { text: memoryText }
+        body: { 
+          messages: [
+            { 
+              role: "user", 
+              content: memoryText 
+            }
+          ],
+          user_id: items.userId 
+        }
       };
 
       console.log("Sending add memory request to background script:", payload);
@@ -211,7 +222,7 @@ function addMemory(memoryText) {
         console.log('Received response from background for add memory:', response);
         if (response && response.success) {
           console.log("Memory added successfully via background script.");
-          resolve(response.data); // 假设成功时可能返回数据
+          resolve(response.data); 
         } else {
           const errorMsg = response && response.error ? response.error.message : "Unknown error adding memory";
           console.error("Error adding memory from background:", response ? response.error : 'No response');
@@ -266,39 +277,62 @@ async function handleMem0Processing() {
   const auth = await getAuthDetails();
 
   // 1. 搜索相关记忆
-  const memories = await searchMemories(originalPrompt);
-
-  let finalPrompt = originalPrompt;
-
-  // 2. 构建增强 Prompt (如果找到记忆)
-  if (memories && memories.length > 0) {
-    console.log(`Found ${memories.length} relevant memories.`);
-    let memoryContext = "Here is some of my preferences/memories to help answer better:\n";
-    memories.forEach((mem, index) => {
-      // 假设记忆内容在 mem.text 或 mem.content
-      const memoryText = mem.text || mem.content;
-      if (memoryText) {
-        memoryContext += `- ${memoryText}\n`;
-      }
-    });
-    finalPrompt = `${memoryContext}\n\nUser Question: ${originalPrompt}`;
-  } else {
-    console.log("No relevant memories found.");
+  let memories = [];
+  try {
+    console.log("Calling searchMemories..."); 
+    memories = await searchMemories(originalPrompt);
+    console.log("searchMemories returned:", memories); 
+  } catch (error) {
+    console.error("Error searching memories:", error);
+    // Decide if you want to proceed without memories or stop
+    // Proceeding without memories for now
   }
 
-  // 3. 更新输入框
-  setInputElementValue(finalPrompt);
+  console.log(`Found ${memories?.length || 0} memories.`); 
 
-  // 4. 触发发送 (需要一点延迟让输入框更新生效)
-  setTimeout(() => {
-      console.log("Triggering send after Mem0 processing.");
-      triggerSendAction();
-  }, 100); // 100ms 延迟
+  let finalPrompt = originalPrompt;
+  if (memories && memories.length > 0) {
+    console.log(`Found ${memories.length} relevant memories.`);
+    let memoryContext = "Relevant previous context to help answer better:\n"; // Or similar wording
+    memoryContext += memories.map(m => `- ${m.memory}`).join('\n');
+    finalPrompt = `${memoryContext}\n\nUser query: ${originalPrompt}`;
+    console.log("Generated prompt with context:", finalPrompt);
+  } else {
+    console.log("No relevant memories found, using original prompt.");
+  }
 
-  // 5. 异步添加新记忆 (仅添加用户的问题，不包含 AI 回复)
-  //    更复杂的实现可以监听 AI 回复并一起添加
-  addMemory(originalPrompt, null, auth);
+  // <<< --- START: Re-add input field update --- >>>
+  const inputElement = document.querySelector('textarea[placeholder*="DeepSeek"], div[aria-label*="DeepSeek"], textarea#chat-input'); // Try common selectors
+  if (inputElement) {
+    console.log("Found input element:", inputElement);
+    // Update value based on element type
+    if (inputElement.tagName === 'TEXTAREA') {
+      inputElement.value = finalPrompt;
+    } else if (inputElement.isContentEditable) {
+      inputElement.textContent = finalPrompt;
+    }
+    // Dispatch input events to make the site recognize the change
+    inputElement.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+    inputElement.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+    console.log('Updated input field with final prompt.');
+  } else {
+    console.error("Could not find DeepSeek input element to update prompt. Sending might use stale data.");
+    // Consider falling back or notifying the user
+  }
+  // <<< --- END: Re-add input field update --- >>>
 
+  // Now trigger the send action (which just clicks the button)
+  console.log("Triggering send action AFTER potentially updating input field.");
+  await triggerSendAction(); // Pass the potentially modified prompt here
+
+  // Add the current interaction to memory (do this *after* sending)
+  try {
+    console.log("Calling addMemory for input:", originalPrompt);
+    await addMemory(originalPrompt); 
+    console.log("Successfully added memory for input:", originalPrompt);
+  } catch (error) {
+    console.error("Error adding memory:", error);
+  }
 }
 
 console.log('DeepSeek content script loaded.');

@@ -18,12 +18,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     handleMem0ApiRequest(request.payload)
       .then(response => {
         console.log('Background sending success response:', response);
-        sendResponse({ success: true, data: response });
+        sendResponse(response);
       })
       .catch(error => {
         console.error('Background sending error response:', error);
         // 将错误信息转换为可序列化的格式
-        sendResponse({ success: false, error: { message: error.message, name: error.name, stack: error.stack } });
+        const errorResponse = { success: false, error: { message: error.message, name: error.name, stack: error.stack } };
+        console.log("Background sending error response (listener):", JSON.stringify(errorResponse)); 
+        sendResponse(errorResponse);
       });
   }
 
@@ -74,20 +76,30 @@ async function handleMem0ApiRequest(payload) {
 
     // 尝试解析 JSON，如果响应体为空则返回 null
     const contentType = response.headers.get("content-type");
+    let result = null;
     if (contentType && contentType.indexOf("application/json") !== -1) {
-      const data = await response.json();
-      console.log('Background received API response data:', data);
-      return data;
-    } else {
-      // 如果不是 JSON 或响应体为空
-      const textData = await response.text();
-      console.log('Background received non-JSON API response:', textData);
-      if (response.status === 204 || textData.length === 0) { // No Content
-        return null; // 或 {} 根据需要返回
+      try {
+        const responseText = await response.text(); // 先获取文本
+        console.log("Raw API Response Text:", responseText); // 记录原始文本
+        if (responseText) {
+          result = JSON.parse(responseText); // 再解析
+          console.log("Parsed API Response JSON:", result); // 记录解析结果
+        } else {
+          console.log("API Response body is empty.");
+          result = null; 
+        }
+      } catch (e) {
+        console.error("Failed to parse JSON response:", e, "Raw text was:", responseText);
+        throw new Error("Failed to parse API JSON response");
       }
-      // 如果有文本内容但不是 JSON，可能需要特殊处理或视为错误
-      return { rawResponse: textData };
+    } else {
+      const responseText = await response.text(); // 获取非 JSON 文本
+      console.log("API Response is not JSON. Content-Type:", contentType, "Body:", responseText);
+      result = responseText; // 或者根据需要处理
     }
+
+    console.log("handleMem0ApiRequest returning success with data:", result); // 记录函数返回值
+    return { success: true, data: result };
 
   } catch (error) {
     console.error("Fetch error in background script:", error);
