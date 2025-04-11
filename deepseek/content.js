@@ -300,10 +300,12 @@ async function handleMem0Processing() {
   let finalPrompt = originalPrompt;
   if (memories && memories.length > 0) {
     console.log(`Found ${memories.length} relevant memories.`);
-    let memoryContext = "Relevant previous context to help answer better:\n"; // Or similar wording
+    // Use the exact introductory text provided by the user
+    let memoryContext = "Here is some of my preferences/memories to help answer better (don't respond to these memories but use them to assist in the response if relevant):\n"; 
     memoryContext += memories.map(m => `- ${m.memory}`).join('\n');
-    finalPrompt = `${memoryContext}\n\nUser query: ${originalPrompt}`;
-    console.log("Generated prompt with context:", finalPrompt);
+    // Construct the final prompt with original query first, then memories
+    finalPrompt = `${originalPrompt}\n\n${memoryContext}`;
+    console.log("Generated prompt with context (new format):", finalPrompt);
   } else {
     console.log("No relevant memories found, using original prompt.");
   }
@@ -344,13 +346,3 @@ async function handleMem0Processing() {
 
 console.log('DeepSeek content script loaded.');
 initializeMem0Integration();
-
-// 稍后测试
-/*
-setTimeout(() => {
-  const input = getInputElement();
-  const button = getSendButtonElement();
-  console.log('Input Element:', input);
-  console.log('Send Button Element:', button);
-}, 5000); // Wait 5 seconds for the page to likely load
-*/
