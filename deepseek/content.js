@@ -9,10 +9,20 @@ function getInputElement() {
 }
 
 function getSendButtonElement() {
-  const svgElement = document.querySelector(SEND_BUTTON_SVG_SELECTOR);
-  if (svgElement) {
-    return svgElement.closest('div[role="button"]');
+  const potentialButtons = document.querySelectorAll('div[role="button"]');
+  console.log(`[Mem0] Found ${potentialButtons.length} potential button elements.`);
+
+  for (const button of potentialButtons) {
+    const hasSvg = button.querySelector('svg');
+    const hasDeepThinkingText = button.textContent.includes('深度思考');
+
+    if (hasSvg && !hasDeepThinkingText) {
+      console.log("[Mem0] Identified potential Send Button:", button);
+      return button;
+    }
   }
+
+  console.error("[Mem0] Send button not found. No element matched criteria (has SVG, does not contain '深度思考').");
   return null;
 }
 
@@ -78,7 +88,9 @@ function getAuthDetails() {
   });
 }
 
-const MEM0_API_BASE_URL = "https://api.mem0.ai"; 
+const MEM0_API_BASE_URL = "https://api.mem0.ai"; // Define base URL consistently
+
+// --- Mem0 API Callers (Modified to use fetch directly) ---
 
 /**
  * Calls Mem0 API search endpoint directly.
@@ -111,7 +123,7 @@ function searchMemories(query) {
       const url = `${MEM0_API_BASE_URL}/v1/memories/search/`;
       const body = JSON.stringify({
         query: query,
-        user_id: userId
+        user_id: userId // Use the retrieved or default userId
       });
 
       console.log(`Fetching POST ${url} for search`);
@@ -135,16 +147,18 @@ function searchMemories(query) {
       })
       .then(data => {
         console.log("Search successful, resolving with data:", data);
+        // Ensure data is an array, as expected by the caller
         resolve(Array.isArray(data) ? data : (data?.results || [])); 
       })
       .catch(error => {
         console.error("Error searching memories directly:", error);
+        // Resolve with empty array on error to avoid breaking the flow in handleMem0Processing
         resolve([]); 
       });
 
     } catch (error) {
       console.error("Error preparing search request:", error);
-      resolve([]);
+      resolve([]); // Resolve with empty array on error
     }
   });
 }
@@ -158,21 +172,22 @@ function addMemory(memoryText) {
   return new Promise(async (resolve, reject) => {
     try {
       const items = await chrome.storage.sync.get(["apiKey", "userId", "access_token"]);
-      const userId = items.userId || "chrome-extension-user"; 
+      const userId = items.userId || "chrome-extension-user"; // Get userId
 
       if (!items.access_token && !items.apiKey) {
         console.error("No API Key or Access Token found for adding memory.");
         return reject(new Error("Authentication details missing"));
       }
       
+      // Construct headers - prioritize access token
       const headers = {
         'Content-Type': 'application/json',
       };
-      if (items.access_token) {
+       if (items.access_token) {
           headers['Authorization'] = `Bearer ${items.access_token}`;
           console.log("Using Access Token for add memory auth.");
       } else {
-          headers['Authorization'] = `Api-Key ${items.apiKey}`;
+          headers['Authorization'] = `Api-Key ${items.apiKey}`; // Fallback to Api-Key
           console.log("Using API Key for add memory auth.");
       }
 
@@ -184,7 +199,7 @@ function addMemory(memoryText) {
             content: memoryText
           }
         ],
-        user_id: userId
+        user_id: userId // Use the retrieved or default userId
       });
 
       console.log(`Fetching POST ${url} for add memory`);
@@ -204,7 +219,7 @@ function addMemory(memoryText) {
             throw new Error(`HTTP error! status: ${response.status}`);
          });
         }
-        if (response.status === 204) {
+        if (response.status === 204) { // Handle potential 204 No Content
             return null;
         }
         return response.json();
@@ -215,7 +230,7 @@ function addMemory(memoryText) {
       })
       .catch(error => {
         console.error("Error adding memory directly:", error);
-        reject(error);
+        reject(error); // Reject the promise on error
       });
 
     } catch (error) {
